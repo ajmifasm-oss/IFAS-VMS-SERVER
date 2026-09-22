@@ -1,52 +1,193 @@
-name: Unzip, Fix EF Core and Build EXE
+name: IFAS VMS Master Build
 
 on:
-  push:
-    branches: [ "main" ]
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Source
+        uses: actions/checkout@v4
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '8.0.x'
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
 
-    - name: Extract ZIP File
-      shell: powershell
-      run: |
-        Expand-Archive -Path "*.zip" -DestinationPath "./extracted" -Force
+      - name: Find and Extract Complete Project ZIP
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path . -Filter "*.zip" -Recurse |
+            Where-Object {
+              $_.Name -like "IFAS-VMS-COMPLETE*" -or
+              $_.Name -like "IFAS-VMS-FULL-PROJECT*"
+            } |
+            Select-Object -First 1
 
-    - name: Add Global Usings
-      shell: powershell
-      run: |
-        $targets = @"
-        <Project>
-          <ItemGroup>
-            <Using Include="Microsoft.EntityFrameworkCore" />
-          </ItemGroup>
-        </Project>
-        "@
-        $targets | Out-File -FilePath "./extracted/Directory.Build.targets" -Encoding utf8
+          if ($zip) {
+            Write-Host "Found project ZIP: $($zip.FullName)"
+            New-Item -ItemType Directory -Force -Path extracted | Out-Null
+            Expand-Archive -Path $zip.FullName -DestinationPath extracted -Force
+          }
+          else {
+            Write-Host "No complete project ZIP found. Using repository source directly."
+          }
 
-    - name: Restore Dependencies
-      run: |
-        $csproj = Get-ChildItem -Path "./extracted" -Filter "*.csproj" -Recurse | Select-Object -First 1
-        dotnet restore $csproj.FullName
+      - name: Locate Solution
+        shell: pwsh
+        run: |
+          $sln = Get-ChildItem -Path . -Filter "*.sln" -Recurse |
+            Select-Object -First 1
 
-    - name: Publish EXE Output
-      run: |
-        $csproj = Get-ChildItem -Path "./extracted" -Filter "*.csproj" -Recurse | Select-Object -First 1
-        dotnet publish $csproj.FullName --configuration Release -o ./publish
+          if (-not $sln) {
+            Write-Error "No .sln file found."
+            exit 1
+          }
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: IFAS-VMS-Executable
-        path: ./publish/*
+          Write-Host "Solution found: $($sln.FullName)"
+          "SOLUTION=$($sln.FullName)" >> $env:GITHUB_ENV
+
+      - name: Restore Dependencies
+        shell: pwsh
+        run: |
+          dotnet restore "$env:SOLUTION"
+
+      - name: Locate IFAS Projects
+        shell: pwsh
+        run: |
+          $projects = Get-ChildItem -Path . -Filter "*.csproj" -Recurse
+
+          Write-Host "Projects found:"
+          $projects | ForEach-Object {
+            Write-Host $_.FullName
+          }
+
+      - name: Build Server
+        shell: pwsh
+        run: |
+          $p = Get-ChildItem -Path . -Filter "IFAS.Server.csproj" -Recurse |
+            Select-Object -First 1
+
+          if ($p) {
+            dotnet publish $p.FullName `
+              -c Release `
+              -r win-x64 `
+              --self-contained true `
+              -p:PublishSingleFile=true `
+              -p:IncludeNativeLibrariesForSelfExtract=true `
+              -o publish/server
+          }
+          else {
+            Write-Host "Server project not found - skipping."
+          }
+
+      - name: Build Client
+        shell: pwsh
+        run: |
+          $p = Get-ChildItem -Path . -Filter "IFAS.VMS.Client.csproj" -Recurse |
+            Select-Object -First 1
+
+          if ($p) {
+            dotnet publish $p.FullName `
+              -c Release `
+              -r win-x64 `
+              --self-contained true `
+              -p:PublishSingleFile=true `
+              -p:IncludeNativeLibrariesForSelfExtract=true `
+              -o publish/client
+          }
+          else {
+            Write-Host "Client project not found - skipping."
+          }
+
+      - name: Build License Manager
+        shell: pwsh
+        run: |
+          $p = Get-ChildItem -Path . -Filter "IFAS.LicenseManager.csproj" -Recurse |
+            Select-Object -First 1
+
+          if ($p) {
+            dotnet publish $p.FullName `
+              -c Release `
+              -r win-x64 `
+              --self-contained true `
+              -p:PublishSingleFile=true `
+              -p:IncludeNativeLibrariesForSelfExtract=true `
+              -o publish/license-manager
+          }
+          else {
+            Write-Host "License Manager project not found - skipping."
+          }
+
+      - name: Build Updater
+        shell: pwsh
+        run: |
+          $p = Get-ChildItem -Path . -Filter "*Updater*.csproj" -Recurse |
+            Select-Object -First 1
+
+          if ($p) {
+            dotnet publish $p.FullName `
+              -c Release `
+              -r win-x64 `
+              --self-contained true `
+              -p:PublishSingleFile=true `
+              -p:IncludeNativeLibrariesForSelfExtract=true `
+              -o publish/updater
+          }
+          else {
+            Write-Host "Updater project not found - skipping."
+          }
+
+      - name: Create Release Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+
+          if (Test-Path publish/server) {
+            Compress-Archive `
+              -Path publish/server/* `
+              -DestinationPath release/IFAS-VMS-Server-win-x64.zip `
+              -Force
+          }
+
+          if (Test-Path publish/client) {
+            Compress-Archive `
+              -Path publish/client/* `
+              -DestinationPath release/IFAS-VMS-Client-win-x64.zip `
+              -Force
+          }
+
+          if (Test-Path publish/license-manager) {
+            Compress-Archive `
+              -Path publish/license-manager/* `
+              -DestinationPath release/IFAS-License-Manager-win-x64.zip `
+              -Force
+          }
+
+          if (Test-Path publish/updater) {
+            Compress-Archive `
+              -Path publish/updater/* `
+              -DestinationPath release/IFAS-VMS-Updater-win-x64.zip `
+              -Force
+          }
+
+      - name: Create Combined Package
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path publish/* `
+            -DestinationPath IFAS-VMS-COMPLETE-WIN-X64.zip `
+            -Force
+
+      - name: Upload All Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: IFAS-VMS-COMPLETE-WIN-X64
+          path: |
+            release/*.zip
+            IFAS-VMS-COMPLETE-WIN-X64.zip
