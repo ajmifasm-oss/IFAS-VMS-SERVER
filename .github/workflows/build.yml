@@ -26,18 +26,7 @@ jobs:
     - name: Fix Missing Namespace in LicenseService.cs
       shell: powershell
       run: |
-        $file = Get-ChildItem -Path "./extracted" -Filter "LicenseService.cs" -Recurse | Select-Object -First 1
-        if ($file) {
-            $path =$file.FullName
-            $content = Get-Content -Path$path -Raw
-            if ($content -notmatch "using Microsoft.EntityFrameworkCore;") {
-                $newContent = "using Microsoft.EntityFrameworkCore;`r`n" + $content
-                Set-Content -Path $path -Value$newContent
-                Write-Host "Added missing EntityFrameworkCore namespace successfully."
-            }
-        } else {
-            Write-Error "LicenseService.cs file not found!"
-        }
+        Get-ChildItem -Path "./extracted" -Filter "LicenseService.cs" -Recurse | ForEach-Object { (Get-Content $_.FullName) -replace 'using System;', 'using System;`r`nusing Microsoft.EntityFrameworkCore;' | Set-Content $_.FullName }
 
     - name: Restore Dependencies
       run: |
