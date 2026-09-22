@@ -40,7 +40,13 @@ jobs:
         $csproj = Get-ChildItem -Path "./extracted" -Filter "*.csproj" -Recurse | Select-Object -First 1
         dotnet restore $csproj.FullName
 
-    - name: Build Project
+    - name: Publish EXE Output
       run: |
         $csproj = Get-ChildItem -Path "./extracted" -Filter "*.csproj" -Recurse | Select-Object -First 1
-        dotnet build $csproj.FullName --configuration Release
+        dotnet publish $csproj.FullName --configuration Release -o ./publish
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: IFAS-VMS-Executable
+        path: ./publish/*
