@@ -23,16 +23,17 @@ jobs:
       run: |
         Expand-Archive -Path "*.zip" -DestinationPath "./extracted" -Force
 
-    - name: Fix Missing Namespace in LicenseService.cs
+    - name: Add Global Usings
       shell: powershell
       run: |
-        Get-ChildItem -Path "./extracted" -Filter "LicenseService.cs" -Recurse | ForEach-Object {
-            $raw = Get-Content$_.FullName -Raw
-            if ($raw -notmatch "Microsoft.EntityFrameworkCore") {
-                $newCode = "using Microsoft.EntityFrameworkCore;`r`n" + $raw
-                Set-Content $_.FullName -Value$newCode
-            }
-        }
+        $targets = @"
+        <Project>
+          <ItemGroup>
+            <Using Include="Microsoft.EntityFrameworkCore" />
+          </ItemGroup>
+        </Project>
+        "@
+        $targets | Out-File -FilePath "./extracted/Directory.Build.targets" -Encoding utf8
 
     - name: Restore Dependencies
       run: |
