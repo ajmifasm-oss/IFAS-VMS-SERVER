@@ -1,0 +1,26 @@
+name: Unzip and Build .NET EXE
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Unzip project
+      run: Expand-Archive -Path IFAS-VMS-COMPLETE-PRODUCT-V3.zip -DestinationPath ./extracted
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Build EXE
+      run: dotnet publish ./extracted/01-IFAS-VMS-SERVER/IFAS.Server.csproj -c Release -r win-x64 --self-contained -o ./output
+
+    - name: Upload EXE Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: IFAS-Server-EXE
+        path: ./output
