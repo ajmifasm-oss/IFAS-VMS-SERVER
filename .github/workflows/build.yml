@@ -8,8 +8,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Unzip project
-      run: Expand-Archive -Path IFAS-VMS-COMPLETE-PRODUCT-V4.zip -DestinationPath ./extracted
+    - name: Unzip project automatically
+      run: |
+        $zipFile = Get-ChildItem -Filter "*.zip" | Select-Object -First 1
+        if ($zipFile) {
+            Expand-Archive -Path $zipFile.FullName -DestinationPath ./extracted
+        } else {
+            Write-Error "No ZIP file found!"
+        }
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -17,7 +23,13 @@ jobs:
         dotnet-version: '8.0.x'
 
     - name: Build EXE
-      run: dotnet publish ./extracted/01-IFAS-VMS-SERVER/IFAS.Server.csproj -c Release -r win-x64 --self-contained -o ./output
+      run: |
+        $csproj = Get-ChildItem -Path ./extracted -Recurse -Filter "IFAS.Server.csproj" | Select-Object -First 1
+        if ($csproj) {
+            dotnet publish $csproj.FullName -c Release -r win-x64 --self-contained -o ./output
+        } else {
+            Write-Error "IFAS.Server.csproj file not found inside ZIP!"
+        }
 
     - name: Upload EXE Artifact
       uses: actions/upload-artifact@v4
