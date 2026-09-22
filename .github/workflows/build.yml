@@ -1,38 +1,51 @@
-name: Unzip and Build .NET EXE
+name: Unzip, Fix EF Core and Build EXE
 
-on: [push]
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v4
 
-    - name: Unzip project automatically
-      run: |
-        $zipFile = Get-ChildItem -Filter "*.zip" | Select-Object -First 1
-        if ($zipFile) {
-            Expand-Archive -Path $zipFile.FullName -DestinationPath ./extracted
-        } else {
-            Write-Error "No ZIP file found!"
-        }
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
 
-    - name: Build EXE
+    - name: Extract ZIP File
+      shell: powershell
       run: |
-        $csproj = Get-ChildItem -Path ./extracted -Recurse -Filter "IFAS.Server.csproj" | Select-Object -First 1
-        if ($csproj) {
-            dotnet publish $csproj.FullName -c Release -r win-x64 --self-contained -o ./output
+        Expand-Archive -Path "*.zip" -DestinationPath "./extracted" -Force
+
+    - name: Fix Missing Namespace in LicenseService.cs
+      shell: powershell
+      run: |
+        $file = Get-ChildItem -Path "./extracted" -Filter "LicenseService.cs" -Recurse | Select-Object -First 1
+        if ($file) {
+            $content = Get-Content$file.FullName -Raw
+            if (-not ($content -match "using Microsoft.EntityFrameworkCore;")) {
+                $newContent = "using Microsoft.EntityFrameworkCore;`r`n" + $content
+                Set-Content -Path $file.FullName -Value$newContent
+                Write-Host "Added missing EntityFrameworkCore namespace successfully."
+            }
         } else {
-            Write-Error "IFAS.Server.csproj file not found inside ZIP!"
+            Write-Error "LicenseService.cs file not found!"
         }
 
-    - name: Upload EXE Artifact
-      uses: actions/upload-artifact@v4
-      with:
+    - name: Restore Dependencies
+      run: |
+        $csproj = Get-ChildItem -Path "./extracted" -Filter "*.csproj" -Recurse | Select-Object -First 1
+        dotnet restore $csproj.FullName
+
+    - name: Build Project
+      run: |
+        $csproj = Get-ChildItem -Path "./extracted" -Filter "*.csproj" -Recurse | Select-Object -First 1
+        dotnet build $csproj.FullName --configuration Release
         name: IFAS-Server-EXE
         path: ./output
