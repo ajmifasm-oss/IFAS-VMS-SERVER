@@ -28,10 +28,11 @@ jobs:
       run: |
         $file = Get-ChildItem -Path "./extracted" -Filter "LicenseService.cs" -Recurse | Select-Object -First 1
         if ($file) {
-            $content = Get-Content$file.FullName -Raw
-            if (-not ($content -match "using Microsoft.EntityFrameworkCore;")) {
+            $path =$file.FullName
+            $content = Get-Content -Path$path -Raw
+            if ($content -notmatch "using Microsoft.EntityFrameworkCore;") {
                 $newContent = "using Microsoft.EntityFrameworkCore;`r`n" + $content
-                Set-Content -Path $file.FullName -Value$newContent
+                Set-Content -Path $path -Value$newContent
                 Write-Host "Added missing EntityFrameworkCore namespace successfully."
             }
         } else {
@@ -47,5 +48,3 @@ jobs:
       run: |
         $csproj = Get-ChildItem -Path "./extracted" -Filter "*.csproj" -Recurse | Select-Object -First 1
         dotnet build $csproj.FullName --configuration Release
-        name: IFAS-Server-EXE
-        path: ./output
